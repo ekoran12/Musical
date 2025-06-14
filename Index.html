@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>🎵 Playlist Video Lengkap</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --hijau: #d0f5e3;
+      --biru: #d5f3fe;
+      --pink: #fde3f3;
+      --abu: #fafafa;
+      --teks: #333;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom right, var(--hijau), var(--biru), var(--pink));
+      color: var(--teks);
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+      max-width: 900px;
+      margin: auto;
+    }
+
+    iframe {
+      width: 100%;
+      height: 320px;
+      border: none;
+      border-radius: 12px;
+      margin-top: 10px;
+    }
+
+    .video-block {
+      margin-bottom: 30px;
+      background: var(--abu);
+      padding: 10px;
+      border-radius: 12px;
+    }
+
+    input[type="url"], input[type="number"], button {
+      padding: 10px;
+      margin: 6px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      width: 90%;
+      max-width: 300px;
+    }
+
+    button {
+      background: var(--biru);
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #c3eaff;
+    }
+
+    .controls {
+      background: var(--pink);
+      padding: 15px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .status {
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .playlist-item {
+      background: var(--abu);
+      margin: 5px;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .playlist-item:hover {
+      background: #e0f0ff;
+    }
+
+    .playlist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>📺 Playlist Video dari Google Sheets + URL Manual</h2>
+
+    <div class="controls">
+      <input type="url" id="manualUrl" placeholder="Tempel URL Video (YouTube, TikTok, Google Drive)">
+      <button onclick="addManualUrl()">Putar URL Manual</button>
+      <button onclick="clearManualUrls()">Hapus Semua Manual</button>
+      <br>
+
+      <input type="number" id="sleepTimer" placeholder="Timer (menit)" min="1" value="10">
+      <button onclick="startSleepTimer()">😴 Mode Sleep</button>
+      <button onclick="toggleRepeat()">🔁 Ulang</button>
+      <br>
+
+      <button onclick="playAll()">▶️ Play Semua</button>
+      <button onclick="stopAll()">⏹️ Stop Semua</button>
+
+      <p id="repeatStatus" class="status">🔁 Mode Ulang: Nonaktif</p>
+      <p id="timerStatus" class="status"></p>
+    </div>
+
+    <h3>🎶 Daftar Playlist</h3>
+    <div id="playlistList" class="playlist">Memuat daftar...</div>
+
+    <div id="videoContainer"></div>
+  </div>
+
+  <script>
+    const endpoint = "https://script.google.com/macros/s/AKfycbz6J4h6v5oEfltoRxJ0RTG0y-pDA9Q0eyYiIWUIuf_ZZcytlfScQDRT9Zk9IZHKGAGUrg/exec";
+    let playlistData = [];
+    let repeatMode = false;
+    let repeatInterval;
+    let sleepTimeout;
+
+    // Load playlist dari Google Sheets
+    fetch(endpoint)
+      .then(res => res.json())
+      .then(data => {
+        playlistData = data;
+        renderPlaylist();
+        loadSavedManualUrls(); // juga tampilkan manual
+      });
+
+    function renderPlaylist() {
+      const list = document.getElementById("playlistList");
+      list.innerHTML = "";
+      playlistData.forEach(video => {
+        const item = document.createElement("div");
+        item.className = "playlist-item";
+        item.textContent = video['Judul Video'];
+        item.onclick = () => playSingleVideo(video['EmbedURL'], video['Judul Video']);
+        list.appendChild(item);
+      });
+    }
+
+    function playSingleVideo(url, title) {
+      const container = document.getElementById("videoContainer");
+      container.innerHTML = `
+        <div class="video-block">
+          <h3>${title}</h3>
+          <iframe src="${url}?autoplay=1" allowfullscreen allow="autoplay"></iframe>
+        </div>
+      `;
+    }
+
+    function playAll() {
+      stopAll();
+      const container = document.getElementById("videoContainer");
+      playlistData.forEach(video => {
+        const div = document.createElement("div");
+        div.className = "video-block";
+        div.innerHTML = `<h3>${video['Judul Video']}</h3>
+          <iframe src="${video['EmbedURL']}?autoplay=1" allowfullscreen allow="autoplay"></iframe>`;
+        container.appendChild(div);
+      });
+
+      const manualList = JSON.parse(localStorage.getItem("manualUrls") || "[]");
+      manualList.forEach(url => embedManual(url));
+      
+      if (repeatMode) {
+        clearInterval(repeatInterval);
+        repeatInterval = setInterval(() => {
+          playAll();
+        }, 10 * 60 * 1000); // ulang setiap 10 menit
+      }
+    }
+
+    function stopAll() {
+      document.getElementById("videoContainer").innerHTML = "";
+      clearInterval(repeatInterval);
+      clearTimeout(sleepTimeout);
+    }
+
+    function toggleRepeat() {
+      repeatMode = !repeatMode;
+      document.getElementById("repeatStatus").textContent = repeatMode
+        ? "🔁 Mode Ulang: Aktif"
+        : "🔁 Mode Ulang: Nonaktif";
+    }
+
+    function startSleepTimer() {
+      const menit = parseInt(document.getElementById("sleepTimer").value);
+      const status = document.getElementById("timerStatus");
+      if (isNaN(menit) || menit < 1) return;
+
+      clearTimeout(sleepTimeout);
+      sleepTimeout = setTimeout(() => {
+        stopAll();
+        status.textContent = "😴 Timer selesai. Video dihentikan.";
+      }, menit * 60000);
+
+      status.textContent = `⏳ Video akan berhenti dalam ${menit} menit.`;
+    }
+
+    function addManualUrl() {
+      const url = document.getElementById("manualUrl").value;
+      if (!url) return;
+
+      let embedUrl = "";
+      if (url.includes("youtube.com") || url.includes("youtu.be")) {
+        const id = url.split("v=")[1]?.split("&")[0] || url.split("/").pop();
+        embedUrl = `https://www.youtube.com/embed/${id}`;
+      } else if (url.includes("drive.google.com")) {
+        const match = url.match(/[-\w]{25,}/);
+        if (match) embedUrl = `https://drive.google.com/file/d/${match[0]}/preview`;
+      } else if (url.includes("tiktok.com")) {
+        embedUrl = url;
+      } else {
+        alert("URL tidak dikenali.");
+        return;
+      }
+
+      saveManualUrl(embedUrl);
+      embedManual(embedUrl);
+      document.getElementById("manualUrl").value = "";
+    }
+
+    function saveManualUrl(url) {
+      let list = JSON.parse(localStorage.getItem("manualUrls") || "[]");
+      list.unshift(url);
+      localStorage.setItem("manualUrls", JSON.stringify(list.slice(0, 10)));
+    }
+
+    function loadSavedManualUrls() {
+      const list = JSON.parse(localStorage.getItem("manualUrls") || "[]");
+      list.forEach(url => embedManual(url));
+    }
+
+    function embedManual(url) {
+      const container = document.getElementById("videoContainer");
+      const div = document.createElement("div");
+      div.className = "video-block";
+      div.innerHTML = `
+        <h3>Video Manual</h3>
+        <iframe src="${url}?autoplay=1" allowfullscreen allow="autoplay"></iframe>
+      `;
+      container.appendChild(div);
+    }
+
+    function clearManualUrls() {
+      localStorage.removeItem("manualUrls");
+      stopAll();
+      loadSavedManualUrls();
+    }
+  </script>
+</body>
+</html>
